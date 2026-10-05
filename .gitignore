@@ -1,0 +1,59 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Asset meta data for deleted assets
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.user
+*.userprefs
+*.booproj
+*.svd
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.apk
+*.aab
+*.unitypackage
+*.app
+crashlytics-build.properties
+sysinfo.txt
+
+# Backup del manifest
+Packages/manifest.json.bak
+
+# Build nativa Android (oggetti compilati di IL2CPP/CMake): si rigenerano
+.utmp/
+*_BurstDebugInformation_DoNotShip/
+
+# Log di prova catturati dal visore
+logcat*.txt
+
+# Dati biometrici: non devono MAI finire in un repository.
+# L'archivio di FaceQuest vive in persistentDataPath sul visore, non qui,
+# ma se qualcuno lo copia nel progetto per un'analisi, questa regola lo ferma.
+# (Niente regola sulla cartella 'facequest': su Windows git ignora le maiuscole
+# e finirebbe per escludere anche Assets/FaceQuest, cioe l'app stessa.)
+persone.bin
+
+# Modelli di terzi: licenze non compatibili con la ridistribuzione (vedi MODELS.md)
+Assets/FaceQuest/Resources/*.onnx
+Assets/PassthroughCameraApiSamples/MultiObjectDetection/SentisInference/Model/*.onnx
+Assets/PassthroughCameraApiSamples/MultiObjectDetection/SentisInference/Model/*.sentis

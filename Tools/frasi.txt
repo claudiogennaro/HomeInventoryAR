@@ -1,0 +1,90 @@
+persona|persona
+bicicletta|bicicletta
+automobile|automobile
+motocicletta|motocicletta
+aereo|aereo
+autobus|autobus
+treno|treno
+camion|camion
+barca|barca
+semaforo|semaforo
+idrante|idrante
+segnale_di_stop|segnale di stop
+parchimetro|parchimetro
+panchina|panchina
+uccello|uccello
+gatto|gatto
+cane|cane
+cavallo|cavallo
+pecora|pecora
+vacca|vacca
+elefante|elefante
+orso|orso
+zebra|zebra
+giraffa|giraffa
+zaino|zaino
+ombrello|ombrello
+borsa|borsa
+cravatta|cravatta
+valigia|valigia
+frisbee|frisbee
+sci|sci
+snowboard|snowboard
+palla|palla
+aquilone|aquilone
+mazza|mazza
+guantone|guantone
+skateboard|skateboard
+tavola_da_surf|tavola da surf
+racchetta|racchetta
+bottiglia|bottiglia
+bicchiere|bicchiere
+tazza|tazza
+forchetta|forchetta
+coltello|coltello
+cucchiaio|cucchiaio
+ciotola|ciotola
+banana|banana
+mela|mela
+panino|panino
+arancia|arancia
+broccolo|broccolo
+carota|carota
+hot_dog|hot dog
+pizza|pizza
+ciambella|ciambella
+torta|torta
+sedia|sedia
+divano|divano
+pianta|pianta
+letto|letto
+tavolo|tavolo
+water|water
+televisore|televisore
+computer|computer
+mouse|mouse
+telecomando|telecomando
+tastiera|tastiera
+telefono|telefono
+microonde|microonde
+forno|forno
+tostapane|tostapane
+lavandino|lavandino
+frigorifero|frigorifero
+libro|libro
+orologio|orologio
+vaso|vaso
+forbici|forbici
+orsetto|orsetto
+asciugacapelli|asciugacapelli
+spazzolino|spazzolino
+a_portata_di_mano|a portata di mano
+mezzo_metro|mezzo metro
+un_metro|un metro
+un_metro_e_mezzo|un metro e mezzo
+due_metri|due metri
+tre_metri|tre metri
+oltre_tre_metri|oltre tre metri
+niente_davanti|niente davanti
+attenzione|attenzione
+ostacolo|ostacolo
