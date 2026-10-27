@@ -38,12 +38,24 @@ namespace FaceQuest
         private GameObject m_bottoniConferma;
         private RawImage m_anteprima;
 
+        private GameObject m_cancellaPersona;
+
         private Persona m_persona;
+
+        /// <summary>
+        /// Un volto nuovo proposto da Train, in attesa di un nome. Non e ancora una
+        /// persona: la finestra e la stessa del nome, ma Save lo trasforma in una
+        /// persona del database e Cancel lo scarta.
+        /// </summary>
+        private PropostaVolto m_proposta;
         private readonly StringBuilder m_testo = new StringBuilder();
         private enum Modo { Chiuso, Nome, ConfermaPersona, ConfermaTutto }
         private Modo m_modo = Modo.Chiuso;
 
         public bool Aperto => m_modo != Modo.Chiuso;
+
+        /// <summary>Vero se la finestra sta dando un nome a un volto appena proposto.</summary>
+        public bool InNuovo => m_proposta != null;
 
         public void Collega(PersonDatabase db, FaceQuestManager manager, PersonPersistenceManager persistenza)
         {
@@ -113,11 +125,11 @@ namespace FaceQuest
                 y -= passo;
             }
 
-            UIFacile.Bottone("Spazio", m_tastiera.transform, "spazio", 24,
+            UIFacile.Bottone("Spazio", m_tastiera.transform, "space", 24,
                 new Vector2(120f, y), new Vector2(180f, lato),
                 new Color(0.16f, 0.19f, 0.26f, 0.95f), () => Scrivi(' '));
 
-            UIFacile.Bottone("Canc", m_tastiera.transform, "◄ canc", 24,
+            UIFacile.Bottone("Canc", m_tastiera.transform, "◄ del", 24,
                 new Vector2(310f, y), new Vector2(180f, lato),
                 new Color(0.26f, 0.19f, 0.19f, 0.95f), Cancella);
         }
@@ -136,11 +148,13 @@ namespace FaceQuest
 
             UIFacile.Bottone("Annulla", m_bottoniNome.transform, "CANCEL", 28,
                 new Vector2(200f, y), new Vector2(170f, 52f),
-                new Color(0.20f, 0.22f, 0.28f, 0.95f), Chiudi);
+                new Color(0.20f, 0.22f, 0.28f, 0.95f), Annulla);
 
-            UIFacile.Bottone("CancellaPersona", m_bottoniNome.transform, "DELETE", 28,
+            // Nascosto quando si da' il nome a un volto nuovo: non c'e ancora niente
+            // da cancellare.
+            m_cancellaPersona = UIFacile.Bottone("CancellaPersona", m_bottoniNome.transform, "DELETE", 28,
                 new Vector2(380f, y), new Vector2(220f, 52f),
-                new Color(0.40f, 0.13f, 0.13f, 0.95f), ChiediConfermaCancellaPersona);
+                new Color(0.40f, 0.13f, 0.13f, 0.95f), ChiediConfermaCancellaPersona).gameObject;
         }
 
         private void CostruisciBottoniConferma(Transform r)
@@ -149,7 +163,7 @@ namespace FaceQuest
             m_bottoniConferma.transform.SetParent(r, false);
             UIFacile.Posiziona((RectTransform)m_bottoniConferma.transform, Vector2.zero, new Vector2(Larghezza, Altezza));
 
-            UIFacile.Bottone("Confermo", m_bottoniConferma.transform, "SI, CANCELLA", 28,
+            UIFacile.Bottone("Confermo", m_bottoniConferma.transform, "YES, DELETE", 28,
                 new Vector2(20f, -220f), new Vector2(280f, 60f),
                 new Color(0.42f, 0.12f, 0.12f, 0.95f), Conferma);
 
@@ -163,13 +177,31 @@ namespace FaceQuest
         public void Apri(Persona p)
         {
             m_persona = p;
+            m_proposta = null;
             m_testo.Clear();
             if (!string.IsNullOrEmpty(p.UserAssignedName)) m_testo.Append(p.UserAssignedName);
 
             m_modo = Modo.Nome;
-            m_titolo.text = $"Nome per {p.DisplayName}";
+            m_titolo.text = $"Name for {p.DisplayName}";
             m_anteprima.texture = p.Anteprima;
             m_anteprima.enabled = p.Anteprima != null;
+            Mostra();
+        }
+
+        /// <summary>
+        /// Chiede il nome per un volto nuovo proposto da Train. Con Save il volto
+        /// entra nel database con quel nome; con Cancel viene scartato.
+        /// </summary>
+        public void ApriNuova(PropostaVolto proposta)
+        {
+            if (proposta == null) return;
+
+            m_persona = null;
+            m_proposta = proposta;
+            m_testo.Clear();
+
+            m_modo = Modo.Nome;
+            m_titolo.text = "Name the new face";
             Mostra();
         }
 
@@ -177,9 +209,9 @@ namespace FaceQuest
         {
             if (m_persona == null) return;
             m_modo = Modo.ConfermaPersona;
-            m_titolo.text = $"Cancellare {m_persona.DisplayName}?";
-            m_messaggio.text = "Verranno cancellati il template biometrico, lo storico e il ritaglio del volto. " +
-                               "L'operazione non e reversibile.";
+            m_titolo.text = $"Delete {m_persona.DisplayName}?";
+            m_messaggio.text = "The biometric template, its history and the face crop will be erased. " +
+                               "This cannot be undone.";
             Mostra();
         }
 
@@ -187,9 +219,9 @@ namespace FaceQuest
         {
             m_modo = Modo.ConfermaTutto;
             m_persona = null;
-            m_titolo.text = "Cancellare TUTTO il database?";
-            m_messaggio.text = "Verranno cancellate tutte le persone, i template, lo storico, i ritagli e la chiave " +
-                               "di cifratura. Dopo questa operazione nulla e recuperabile.";
+            m_titolo.text = "Delete the ENTIRE database?";
+            m_messaggio.text = "All people, templates, history, crops and the encryption key will be erased. " +
+                               "Nothing can be recovered afterwards.";
             Mostra();
         }
 
@@ -197,6 +229,7 @@ namespace FaceQuest
         {
             m_modo = Modo.Chiuso;
             m_persona = null;
+            m_proposta = null;
             if (m_radice != null) m_radice.SetActive(false);
         }
 
@@ -210,7 +243,11 @@ namespace FaceQuest
             m_bottoniConferma.SetActive(!nome);
             m_campo.transform.parent.gameObject.SetActive(nome);
             m_messaggio.gameObject.SetActive(!nome);
-            m_anteprima.enabled = m_persona?.Anteprima != null;
+
+            var foto = m_persona != null ? m_persona.Anteprima : m_proposta?.Foto;
+            m_anteprima.texture = foto;
+            m_anteprima.enabled = foto != null;
+            if (m_cancellaPersona != null) m_cancellaPersona.SetActive(m_proposta == null);
 
             AggiornaCampo();
         }
@@ -233,12 +270,40 @@ namespace FaceQuest
         private void AggiornaCampo()
         {
             if (m_campo == null) return;
-            m_campo.text = m_testo.Length == 0 ? "<i>senza nome</i>" : m_testo.ToString();
+            var vuoto = m_proposta != null ? "<i>type a name</i>" : "<i>no name</i>";
+            m_campo.text = m_testo.Length == 0 ? vuoto : m_testo.ToString();
             m_campo.supportRichText = true;
+        }
+
+        private void Annulla()
+        {
+            // Un volto nuovo a cui non si da' il nome e un volto scartato: si
+            // dice al manager, che ne distrugge la foto e lo tiene a bada per un
+            // po', cosi non ricompare un attimo dopo.
+            if (m_proposta != null) m_manager?.ScartaProposta(m_proposta);
+            Chiudi();
         }
 
         private void Salva()
         {
+            if (m_proposta != null)
+            {
+                var nuovoNome = m_testo.ToString().Trim();
+
+                // Senza nome non c'e persona: la scelta di Add e proprio quella di
+                // darle un nome, e un volto senza nome non sopravvivrebbe alla
+                // chiusura dell'app. Si resta nella finestra.
+                if (nuovoNome.Length == 0)
+                {
+                    m_campo.text = "<i>type a name first</i>";
+                    return;
+                }
+
+                m_manager?.AggiungiDaProposta(m_proposta, nuovoNome);
+                Chiudi();
+                return;
+            }
+
             if (m_persona == null || m_database == null) { Chiudi(); return; }
 
             var nome = m_testo.ToString().Trim();

@@ -33,8 +33,14 @@ namespace FaceQuest
         [SerializeField] private bool m_mostraConfidenza;
 
         [Header("Stabilita")]
-        [SerializeField, Tooltip("Velocita con cui la box raggiunge la posizione misurata.")]
-        private float m_reattivita = 12f;
+        [SerializeField, Tooltip("Velocita (1/s) con cui la box raggiunge la posizione misurata quando lo scarto e piccolo: tiene ferma la box sui tremolii.")]
+        private float m_reattivitaMin = 5f;
+        [SerializeField, Tooltip("Velocita (1/s) quando lo scarto e grande (volto che si muove): la box recupera in fretta e non lascia scia.")]
+        private float m_reattivitaMax = 22f;
+        [SerializeField, Range(0f, 0.5f), Tooltip("Scarto (in frazione della larghezza della box) sotto il quale la box non si muove affatto.")]
+        private float m_zonaMorta = 0.08f;
+        [SerializeField, Tooltip("Una box non si disegna se la sua traccia non ha ricevuto un rilevamento da piu di questi secondi: senza questo limite le box dei volti appena spostati restano appese dove il volto era e formano una scia.")]
+        private float m_etaMassima = 0.3f;
         [SerializeField, Tooltip("Distanza fra le pupille assunta, in metri.")]
         private float m_distanzaPupille = 0.063f;
         [SerializeField, Tooltip("Altezza del volto assunta, usata quando la stima dalle pupille non regge.")]
@@ -116,6 +122,16 @@ namespace FaceQuest
 
             foreach (var t in tracce)
             {
+                // Traccia senza rilevamenti recenti: non si disegna. Resta nel
+                // tracker per qualche istante in piu (per ritrovare il volto
+                // se riappare), ma mostrarla vuol dire lasciare un rettangolo
+                // fermo dove il volto non c'e piu.
+                if (Time.time - t.TempoAggiornamento > m_etaMassima)
+                {
+                    t.PosizioneValida = false;
+                    continue;
+                }
+
                 if (!Proietta(t, posaCamera, out var centro, out var rotazione, out var dimensione, out var distanza))
                 {
                     t.PosizioneValida = false;
@@ -178,13 +194,25 @@ namespace FaceQuest
 
         private void Update()
         {
-            var k = 1f - Mathf.Exp(-m_reattivita * Time.deltaTime);
-
             foreach (var b in m_attive)
             {
-                b.Pos = Vector3.Lerp(b.Pos, b.PosBersaglio, k);
-                b.Rot = Quaternion.Slerp(b.Rot, b.RotBersaglio, k);
-                b.Dim = Vector2.Lerp(b.Dim, b.DimBersaglio, k);
+                // Velocita adattiva: piccola per gli scarti piccoli (la box non
+                // trema), grande per quelli grandi (la box non resta indietro).
+                // Con una velocita unica o si tremava o si trascinava una coda.
+                var rif = Mathf.Max(0.06f, b.Dim.x);
+                var scarto = Vector3.Distance(b.Pos, b.PosBersaglio) / rif;
+
+                if (scarto > m_zonaMorta)
+                {
+                    var t = Mathf.InverseLerp(m_zonaMorta, 1f, scarto);
+                    var velocita = Mathf.Lerp(m_reattivitaMin, m_reattivitaMax, t);
+                    var k = 1f - Mathf.Exp(-velocita * Time.deltaTime);
+                    b.Pos = Vector3.Lerp(b.Pos, b.PosBersaglio, k);
+                    b.Rot = Quaternion.Slerp(b.Rot, b.RotBersaglio, k);
+                }
+
+                var kDim = 1f - Mathf.Exp(-m_reattivitaMin * Time.deltaTime);
+                b.Dim = Vector2.Lerp(b.Dim, b.DimBersaglio, kDim);
 
                 b.Go.transform.SetPositionAndRotation(b.Pos, b.Rot);
                 DisegnaRettangolo(b.Linea, b.Dim);

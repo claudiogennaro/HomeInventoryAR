@@ -116,14 +116,14 @@ namespace FaceQuest
                         + 0.06f * Mathf.Clamp01(punteggioDetector);
 
             q.Motivo = null;
-            if (q.LatoPixel < m_latoMinimo) q.Motivo = $"volto piccolo ({q.LatoPixel:0} px)";
-            else if (q.Nitidezza < m_nitidezzaMinima) q.Motivo = $"mosso o sfocato ({q.Nitidezza:0.00})";
-            else if (Mathf.Abs(q.Yaw) > m_yawMassimo) q.Motivo = $"troppo di profilo (yaw {q.Yaw:0}°)";
-            else if (Mathf.Abs(q.Pitch) > m_pitchMassimo) q.Motivo = $"testa alzata o abbassata (pitch {q.Pitch:0}°)";
-            else if (Mathf.Abs(q.Roll) > m_rollMassimo) q.Motivo = $"volto quasi capovolto (roll {q.Roll:0}°)";
-            else if (q.Luminosita < m_luminositaMinima) q.Motivo = "troppo buio";
-            else if (q.Luminosita > m_luminositaMassima) q.Motivo = "sovraesposto";
-            else if (q.Punteggio < m_punteggioMinimo) q.Motivo = $"qualita complessiva bassa ({q.Punteggio:0.00})";
+            if (q.LatoPixel < m_latoMinimo) q.Motivo = $"face too small ({q.LatoPixel:0} px)";
+            else if (q.Nitidezza < m_nitidezzaMinima) q.Motivo = $"motion blur / out of focus ({q.Nitidezza:0.00})";
+            else if (Mathf.Abs(q.Yaw) > m_yawMassimo) q.Motivo = $"too much profile (yaw {q.Yaw:0}°)";
+            else if (Mathf.Abs(q.Pitch) > m_pitchMassimo) q.Motivo = $"head tilted up/down (pitch {q.Pitch:0}°)";
+            else if (Mathf.Abs(q.Roll) > m_rollMassimo) q.Motivo = $"face almost upside down (roll {q.Roll:0}°)";
+            else if (q.Luminosita < m_luminositaMinima) q.Motivo = "too dark";
+            else if (q.Luminosita > m_luminositaMassima) q.Motivo = "overexposed";
+            else if (q.Punteggio < m_punteggioMinimo) q.Motivo = $"overall quality low ({q.Punteggio:0.00})";
 
             q.Accettabile = q.Motivo == null;
         }

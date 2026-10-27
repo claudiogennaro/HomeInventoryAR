@@ -13,6 +13,48 @@ using UnityEngine;
 
 namespace FaceQuest
 {
+    /// <summary>
+    /// Le due fasi dell'app.
+    ///
+    /// Search ripete la sola ri-identificazione: confronta i volti inquadrati con
+    /// quelli gia nel database e non ne aggiunge, non ne modifica i template.
+    /// Train e la fase in cui il database cresce: un volto nuovo non entra da
+    /// solo, viene PROPOSTO all'utente, che decide se aggiungerlo e con che nome.
+    ///
+    /// Si parte sempre da Search: raccogliere un volto e un atto da scegliere, non
+    /// un effetto collaterale dell'accensione.
+    /// </summary>
+    public enum ModoFace { Search, Train }
+
+    /// <summary>
+    /// Un volto nuovo che aspetta la decisione dell'utente (Add / Discard).
+    ///
+    /// Non e ancora una persona: nel database entra solo se l'utente preme Add e
+    /// scrive un nome. Fino ad allora porta con se' cio che serve a farne una:
+    /// gli embedding raccolti, il ritaglio da mostrare e la traccia a cui
+    /// appartiene.
+    /// </summary>
+    public class PropostaVolto
+    {
+        /// <summary>La traccia viva da cui viene, per attaccarle il nome appena dato.</summary>
+        public int TracciaId;
+
+        /// <summary>Gli embedding coerenti fra loro che hanno portato alla proposta.</summary>
+        public readonly List<float[]> Embedding = new List<float[]>();
+
+        public float Qualita;
+
+        /// <summary>Distanza stimata in metri al momento della proposta.</summary>
+        public float Distanza;
+
+        /// <summary>
+        /// Il ritaglio allineato mostrato nel popup. Appartiene alla proposta
+        /// finche non viene scartata (e la distrugge chi la scarta) o accettata (e
+        /// passa alla persona, che ne diventa l'anteprima).
+        /// </summary>
+        public Texture2D Foto;
+    }
+
     /// <summary>Un volto rilevato in un singolo fotogramma.</summary>
     public struct VoltoRilevato
     {
@@ -118,7 +160,7 @@ namespace FaceQuest
         /// </summary>
         public string DisplayName =>
             !string.IsNullOrEmpty(UserAssignedName) ? UserAssignedName
-            : NumeroOspite > 0 ? $"Ospite {NumeroOspite}"
+            : NumeroOspite > 0 ? $"Guest {NumeroOspite}"
             : PersonID;
 
         public DateTime PrimaVista => new DateTime(FirstSeenTicks);

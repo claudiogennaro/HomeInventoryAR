@@ -135,6 +135,15 @@ public static class FaceQuestSceneBuilder
         var seguiEditor = editorGo.AddComponent<SeguiTesta>();
         var editor = editorGo.AddComponent<PersonEditorUI>();
 
+        var popupGo = new GameObject("PopupNuovoVolto");
+        popupGo.transform.SetParent(radice.transform, false);
+        var seguiPopup = popupGo.AddComponent<SeguiTesta>();
+        var popup = popupGo.AddComponent<PopupNuovoVolto>();
+
+        var bannerGo = new GameObject("BannerModalita");
+        bannerGo.transform.SetParent(radice.transform, false);
+        var banner = bannerGo.AddComponent<BannerModalita>();
+
         // Il pannello nasce a SINISTRA (m_lato negativo, ora che il segno del
         // vettore destro e corretto) e poi resta fermo li dove lo si lascia:
         // questi tre valori sono solo la posa di partenza e quella a cui la
@@ -154,6 +163,16 @@ public static class FaceQuestSceneBuilder
             so.FindProperty("m_distanza").floatValue = 0.68f;
             so.FindProperty("m_lato").floatValue = 0.02f;
             so.FindProperty("m_altezza").floatValue = -0.04f;
+        });
+
+        // Il popup di Train sta al centro, un po' piu vicino della finestra del
+        // nome e leggermente sopra la linea dello sguardo: deve notarsi senza
+        // coprire il volto che sta proponendo.
+        Scrivi(seguiPopup, so =>
+        {
+            so.FindProperty("m_distanza").floatValue = 0.62f;
+            so.FindProperty("m_lato").floatValue = 0.0f;
+            so.FindProperty("m_altezza").floatValue = 0.10f;
         });
 
         Scrivi(faceDetector, so =>
@@ -228,6 +247,11 @@ public static class FaceQuestSceneBuilder
             so.FindProperty("m_box").objectReferenceValue = box;
             so.FindProperty("m_pannello").objectReferenceValue = pannello;
             so.FindProperty("m_editor").objectReferenceValue = editor;
+            so.FindProperty("m_popup").objectReferenceValue = popup;
+            so.FindProperty("m_modoIniziale").enumValueIndex = (int)ModoFace.Search;
+            so.FindProperty("m_distanzaMaxProposta").floatValue = 2.5f;
+            so.FindProperty("m_tolleranzaVicino").floatValue = 0.35f;
+            so.FindProperty("m_pausaDopoScarto").floatValue = 10f;
             so.FindProperty("m_confermePerCreare").intValue = 3;
             so.FindProperty("m_coerenzaCandidati").floatValue = 0.45f;
             so.FindProperty("m_qualitaPerCreare").floatValue = 0.40f;
@@ -242,6 +266,8 @@ public static class FaceQuestSceneBuilder
             so.FindProperty("m_shaderAffine").objectReferenceValue = shaderAffine;
             so.FindProperty("m_soloDetector").boolValue = false;
         });
+
+        Scrivi(banner, so => so.FindProperty("m_manager").objectReferenceValue = manager);
 
         System.IO.Directory.CreateDirectory("Assets/Scenes");
         EditorSceneManager.SaveScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene(), ScenaFaceQuest);

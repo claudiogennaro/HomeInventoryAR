@@ -247,6 +247,27 @@ l'equivalente sull'altro controller e, dove ha senso, il pizzico a mani nude.
 
 ---
 
+## 5c. Pannello, loghi e stabilità delle box
+
+- **Il pannello People torna da solo.** Resta fermo dove lo si lascia, ma se
+  rimane fuori dalla zona comoda (oltre 50° dallo sguardo o oltre 1,4 m) per più di
+  2,5 secondi scivola con calma nella posa di partenza (`PannelloAfferrabile`:
+  `m_tornaDaSolo`, `m_angoloMassimo`, `m_distanzaPerso`, `m_attesaRitorno`).
+  Dopo averlo spostato a mano non si muove per 15 secondi (`m_pausaDopoPresa`).
+  Lo stick premuto lo riporta subito.
+- **Loghi CNR e ISTI** su una targhetta chiara sopra la barra di presa: i file
+  sono `Resources/LogoCNR.png` e `Resources/LogoISTI.png` (sostituibili).
+- **Scia delle box.** Due cause, due rimedi. (1) Le tracce che non ricevevano un
+  rilevamento restavano disegnate fino a 0,8 s, ferme dove il volto era stato: ora
+  una box non si disegna se la sua traccia è più vecchia di 0,3 s
+  (`m_etaMassima`), e il tracker riassocia per vicinanza dei centri i volti che si
+  muovono in fretta (`m_raggioRecupero`), invece di creare una traccia nuova a ogni
+  scatto. (2) Il movimento della box è adattivo: ferma sotto una zona morta (8 %
+  della larghezza), lenta per gli scarti piccoli (`m_reattivitaMin` 5/s) e veloce
+  per quelli grandi (`m_reattivitaMax` 22/s).
+
+---
+
 ## 6. La pipeline
 
 ```

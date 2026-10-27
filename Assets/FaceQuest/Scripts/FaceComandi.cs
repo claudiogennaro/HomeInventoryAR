@@ -12,6 +12,7 @@ namespace FaceQuest
     /// persona nella lista e scrivere il suo nome.
     ///
     ///   A            accende e spegne il riconoscimento
+    ///   grip         passa da Train a Search (e viceversa)
     ///   Y            cancella il database (con conferma)
     ///   B tenuto     esce dall'app
     ///   stick su/giu scorre la lista delle persone
@@ -60,6 +61,21 @@ namespace FaceQuest
         public static bool RiconoscimentoPremuto() =>
             OVRInput.GetDown(OVRInput.RawButton.A) ||
             OVRInput.GetDown(OVRInput.RawButton.X);
+
+        /// <summary>
+        /// Passa da Train a Search e viceversa: tasto di presa (grip) di uno dei due
+        /// controller, o pizzico medio-pollice a mani nude.
+        ///
+        /// Il grip e sotto il dito medio e si preme senza staccare lo sguardo dalla
+        /// scena, e non e usato da nient'altro in FaceQuest: il grilletto serve al
+        /// puntatore e al trascinamento, A allo spegnimento, Y alla cancellazione.
+        /// Il pizzico indice resta del puntatore, quindi per le mani nude si usa il
+        /// medio.
+        /// </summary>
+        public static bool ModalitaPremuta() =>
+            OVRInput.GetDown(OVRInput.RawButton.RHandTrigger) ||
+            OVRInput.GetDown(OVRInput.RawButton.LHandTrigger) ||
+            PinchIniziato(OVRPlugin.HandFingerPinch.Middle);
 
         /// <summary>Cancella il database: tasto Y. Apre la conferma, non cancella subito.</summary>
         public static bool CancellaDbPremuto() =>

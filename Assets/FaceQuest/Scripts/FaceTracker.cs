@@ -42,6 +42,22 @@ namespace FaceQuest
         public readonly List<float[]> Candidati = new List<float[]>();
         public int VerdettiNuova;
 
+        /// <summary>
+        /// Dopo che il popup di questa traccia e stato scartato (o e scaduto) non
+        /// se ne propone un altro per questo volto prima di questo istante.
+        /// </summary>
+        public float NonProporreFinoA;
+
+        /// <summary>
+        /// Chiede un nuovo embedding al prossimo giro, anche se l'identita era
+        /// "Riconosciuta". Serve quando c'e un motivo di dubbio — la traccia e
+        /// saltata su un altro punto, o l'ultimo confronto era ambiguo — perche
+        /// altrimenti l'etichetta vecchia resterebbe sul volto fino alla
+        /// riconferma periodica (2,5 s): abbastanza per vedere il nome di una
+        /// persona sopra il volto di un'altra.
+        /// </summary>
+        public bool RiverificaSubito;
+
         public void ScordaCandidati()
         {
             Candidati.Clear();
@@ -71,6 +87,10 @@ namespace FaceQuest
         private float m_iouAssociazione = 0.3f;
         [SerializeField, Tooltip("Dopo quanti secondi senza rilevamenti la traccia muore.")]
         private float m_tempoVita = 0.8f;
+        [SerializeField, Tooltip("Se l'IoU non basta (volto che si muove in fretta), lo stesso volto si riconosce dalla vicinanza dei centri: entro questa frazione della dimensione del box. 0 = disattivato.")]
+        private float m_raggioRecupero = 0.8f;
+        [SerializeField, Tooltip("Solo le tracce viste negli ultimi secondi possono essere recuperate cosi.")]
+        private float m_etaRecupero = 0.4f;
         [SerializeField, Range(0f, 1f), Tooltip("0 = nessun smoothing, 1 = box immobile.")]
         private float m_smoothing = 0.55f;
 
@@ -124,6 +144,49 @@ namespace FaceQuest
                 }
             }
 
+            // Secondo giro, per i volti che si muovono in fretta: fra due
+            // rilevamenti il box puo spostarsi tanto da non sovrapporsi piu al
+            // precedente (IoU sotto soglia). Senza questo giro nasceva una
+            // traccia nuova a ogni scatto, mentre quella vecchia restava li per
+            // altri 0,8 s: una fila di box dietro il volto, ed embedding rifatti
+            // da zero a ogni passo. Si associa per vicinanza dei centri, con
+            // dimensioni compatibili, e solo le tracce viste da poco.
+            if (m_raggioRecupero > 0f)
+            {
+                foreach (var t in m_tracce)
+                {
+                    if (t.TempoAggiornamento == tempo) continue;
+                    if (tempo - t.TempoAggiornamento > m_etaRecupero) continue;
+
+                    var vecchio = t.Ultimo.Box;
+                    var dimVecchio = Mathf.Max(vecchio.width, vecchio.height);
+                    var migliore = -1;
+                    var migliorDist = m_raggioRecupero * dimVecchio;
+
+                    for (var i = 0; i < rilevamenti.Count; i++)
+                    {
+                        if (usati[i]) continue;
+                        var nuovo = rilevamenti[i].Box;
+                        var rapporto = nuovo.height / Mathf.Max(1e-5f, vecchio.height);
+                        if (rapporto < 0.6f || rapporto > 1.7f) continue;
+
+                        var d = Vector2.Distance(vecchio.center, nuovo.center);
+                        if (d < migliorDist) { migliorDist = d; migliore = i; }
+                    }
+
+                    if (migliore < 0) continue;
+
+                    usati[migliore] = true;
+                    t.Ultimo = rilevamenti[migliore];
+                    t.TempoAggiornamento = tempo;
+                    t.BoxLisciata = Mescola(t.BoxLisciata, t.Ultimo.Box, m_smoothing);
+
+                    // Un salto cosi grande puo essere lo stesso volto veloce, o
+                    // un altro volto nello stesso punto: si ricontrolla subito.
+                    t.RiverificaSubito = true;
+                }
+            }
+
             for (var i = 0; i < rilevamenti.Count; i++)
             {
                 if (usati[i]) continue;
@@ -166,6 +229,7 @@ namespace FaceQuest
         private int Urgenza(Traccia t, float tempo)
         {
             if (t.Esito == EsitoIdentita.DaFare) return 3;
+            if (t.RiverificaSubito) return 2;
 
             var dt = tempo - t.TempoIdentificazione;
             if (t.Esito == EsitoIdentita.Incerta && dt >= m_intervalloIncerta) return 2;
@@ -184,6 +248,7 @@ namespace FaceQuest
         public void SegnaIdentificata(Traccia t, float tempo)
         {
             t.TempoIdentificazione = tempo;
+            t.RiverificaSubito = false;
             t.CentroIdentificazione = t.Ultimo.Box.center;
             t.ScalaIdentificazione = t.Ultimo.Box.height;
             FaceQualityEstimator.PosaDaLandmark(t.Ultimo, out var yaw, out _, out _);

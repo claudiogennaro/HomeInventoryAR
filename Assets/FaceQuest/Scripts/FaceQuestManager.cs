@@ -11,6 +11,18 @@
 //     -> Database runtime
 //     -> Box AR + etichetta, pannello People
 //
+// Due fasi, scelte dall'utente (ModoFace):
+//
+//   Search  solo ri-identificazione. I volti inquadrati si confrontano con
+//           quelli gia nel database; un volto che non somiglia a nessuno resta
+//           "Unknown" e il database non cambia: nessuna persona nuova, nessun
+//           template aggiornato.
+//   Train   il database cresce. Un volto sconosciuto che si conferma su piu
+//           fotogrammi non entra da solo: viene PROPOSTO con un popup (Add /
+//           Discard). Solo con Add, e dopo aver scritto un nome, diventa una
+//           persona. Un popup alla volta, e solo per il volto sconosciuto piu
+//           vicino.
+//
 // Tre principi che spiegano le scelte di questo file:
 //
 // Il main thread non si blocca mai. Ogni stadio pesante e una coroutine che
@@ -53,6 +65,18 @@ namespace FaceQuest
         [SerializeField] private PeoplePanelController m_pannello;
         [SerializeField] private PersonEditorUI m_editor;
 
+        [Header("Fasi Train / Search")]
+        [SerializeField, Tooltip("Fase con cui parte l'app. Search: non si raccoglie nulla finche l'utente non passa a Train.")]
+        private ModoFace m_modoIniziale = ModoFace.Search;
+        [SerializeField, Tooltip("La finestra Add / Discard che propone un volto nuovo.")]
+        private PopupNuovoVolto m_popup;
+        [SerializeField, Tooltip("Oltre questa distanza (metri) un volto sconosciuto non viene proposto: sono persone lontane, che non hanno scelto di essere in primo piano.")]
+        private float m_distanzaMaxProposta = 2.5f;
+        [SerializeField, Tooltip("Fra piu volti sconosciuti si propone il piu vicino. Un altro lo scavalca solo se e piu vicino di almeno questi metri.")]
+        private float m_tolleranzaVicino = 0.35f;
+        [SerializeField, Tooltip("Dopo uno scarto o una scadenza lo stesso volto non viene riproposto prima di questi secondi.")]
+        private float m_pausaDopoScarto = 10f;
+
         [Header("Nascita di una nuova identita")]
         [SerializeField, Tooltip("Quanti fotogrammi di seguito devono dire 'non la conosco' prima di creare un'identita.")]
         private int m_confermePerCreare = 3;
@@ -90,6 +114,7 @@ namespace FaceQuest
         private bool m_soloDetector;
 
         public bool RiconoscimentoAttivo => m_riconoscimentoAttivo;
+        public ModoFace Modo => m_modo;
 
         /// <summary>false in modalita demo: nessun volto e nessun template tocca lo storage.</summary>
         private bool ScriveSuDisco => m_persistenza != null && !m_persistenza.SoloInMemoria;
@@ -113,15 +138,31 @@ namespace FaceQuest
         private QualitaVolto m_ultimaQualita;
         private int m_candidatiInAttesa;
 
+        private ModoFace m_modo;
+        private float m_prossimaProposta;
+        private readonly List<(float[] Embedding, float Fino)> m_scartati = new List<(float[], float)>();
+
         private void Awake()
         {
             m_blit = new BlitAffine(m_shaderAffine);
             FaceQuestConfig.TensoreDallAlto = m_tensoreDallAlto;
             if (m_persistenza != null) m_persistenza.Collega(m_database);
+
+            m_modo = m_modoIniziale;
+            if (m_popup != null)
+            {
+                m_popup.Aggiungi += AlAggiungi;
+                m_popup.Scartata += ScartaProposta;
+            }
         }
 
         private void OnDestroy()
         {
+            if (m_popup != null)
+            {
+                m_popup.Aggiungi -= AlAggiungi;
+                m_popup.Scartata -= ScartaProposta;
+            }
             m_blit?.Dispose();
             if (m_rtFrame != null) m_rtFrame.Release();
             if (m_rtDetector != null) m_rtDetector.Release();
@@ -288,8 +329,14 @@ namespace FaceQuest
                     case EsitoIdentita.Riconosciuta:
                         {
                             var p = esito.Candidato;
-                            m_database.Osserva(p, embedding, q.Punteggio, q.Accettabile);
-                            AggiornaAnteprima(p, q);
+
+                            // In Search il database e in sola lettura: si registra
+                            // che la persona e stata vista, ma ne' il template ne'
+                            // l'anteprima cambiano. E la differenza concreta fra
+                            // le due fasi anche per chi e gia nel database.
+                            var allena = m_modo == ModoFace.Train;
+                            m_database.Osserva(p, embedding, q.Punteggio, allena && q.Accettabile);
+                            if (allena) AggiornaAnteprima(p, q);
                             t.PersonID = p.PersonID;
                             t.Etichetta = p.DisplayName;
                             t.Confidenza = esito.Somiglianza;
@@ -310,8 +357,25 @@ namespace FaceQuest
                             // ogni frame dubbio e peggio che restare fermi.
                             if (t.PersonID != null)
                             {
-                                var nota = m_database.PerID(t.PersonID);
-                                if (nota != null) m_database.Osserva(nota, embedding, q.Punteggio, false);
+                                // Un frame ambiguo non toglie il nome. Due di
+                                // seguito si': il nome sopra un volto che per due
+                                // volte non somiglia abbastanza a quella persona
+                                // e probabilmente il nome sbagliato (qualcun altro
+                                // nello stesso punto). Nel frattempo si
+                                // ricontrolla subito e non fra 2,5 secondi.
+                                if (t.TentativiIncerti >= 2)
+                                {
+                                    t.PersonID = null;
+                                    t.Etichetta = "Unknown";
+                                    t.Esito = EsitoIdentita.Incerta;
+                                    t.ScordaCandidati();
+                                }
+                                else
+                                {
+                                    var nota = m_database.PerID(t.PersonID);
+                                    if (nota != null) m_database.Osserva(nota, embedding, q.Punteggio, false);
+                                    t.RiverificaSubito = true;
+                                }
                             }
                             else
                             {
@@ -352,6 +416,16 @@ namespace FaceQuest
                             // l'identita non nasce.
                             t.Confidenza = 0f;
 
+                            // In Search un volto che non somiglia a nessuno resta
+                            // semplicemente "Unknown": non si raccoglie nulla.
+                            if (m_modo == ModoFace.Search)
+                            {
+                                t.Etichetta = "Unknown";
+                                t.Esito = EsitoIdentita.Incerta;
+                                t.ScordaCandidati();
+                                break;
+                            }
+
                             var abbastanzaBuono = q.Accettabile
                                                   && q.Punteggio >= m_qualitaPerCreare
                                                   && t.Ultimo.Punteggio >= m_punteggioPerCreare;
@@ -376,8 +450,11 @@ namespace FaceQuest
                                 break;
                             }
 
-                            CreaNuova(t, embedding, q);
-                            t.ScordaCandidati();
+                            // Coerente e confermato: non entra da solo, si propone.
+                            // Se per ora non si puo (un popup e gia aperto, c'e
+                            // qualcuno piu vicino, e appena stato scartato) i
+                            // candidati restano e si riprova al prossimo giro.
+                            Proponi(t, q);
                             break;
                         }
                 }
@@ -410,16 +487,186 @@ namespace FaceQuest
             return true;
         }
 
-        private void CreaNuova(Traccia t, float[] embedding, QualitaVolto q)
+        // ------------------------------------------------------------------
+        // Train: proposta, Add / Discard, nome
+
+        /// <summary>Si puo mostrare un nuovo popup adesso? Uno solo alla volta, e mai sopra la tastiera.</summary>
+        private bool PuoProporre()
         {
-            var p = m_database.Crea(embedding, q.Punteggio);
-            AggiornaAnteprima(p, q);
-            t.PersonID = p.PersonID;
-            t.Etichetta = p.DisplayName;
-            t.Confidenza = 1f;
-            t.Esito = EsitoIdentita.Nuova;
-            t.TentativiIncerti = 0;
-            Debug.Log($"[FaceQuest] Nuova identita {p.PersonID} (qualita {q.Punteggio:0.00}, {q.LatoPixel:0} px).");
+            if (m_modo != ModoFace.Train || m_popup == null) return false;
+            if (m_popup.Visibile) return false;
+            if (m_editor != null && m_editor.Aperto) return false;
+            return Time.time >= m_prossimaProposta;
+        }
+
+        /// <summary>
+        /// Valuta se proporre questa traccia. Regole, nell'ordine:
+        /// un popup alla volta; non troppo lontano; non appena scartato; e se ci
+        /// sono piu volti sconosciuti si propone solo il piu vicino. L'idea e che
+        /// chi sta in primo piano e chi si sta davvero inquadrando; con una sala
+        /// piena una richiesta per ogni faccia farebbe sembrare l'app bloccata.
+        /// </summary>
+        private void Proponi(Traccia t, QualitaVolto q)
+        {
+            if (!PuoProporre()) return;
+            if (Time.time < t.NonProporreFinoA) return;
+            if (!t.PosizioneValida || t.Distanza <= 0f || t.Distanza > m_distanzaMaxProposta) return;
+            if (SomigliaAScartato(t.Candidati)) return;
+
+            foreach (var altra in m_tracker.Tracce)
+            {
+                if (altra == t || altra.PersonID != null) continue;
+                if (altra.VerdettiNuova <= 0 || !altra.PosizioneValida || altra.Distanza <= 0f) continue;
+                if (Time.time < altra.NonProporreFinoA || SomigliaAScartato(altra.Candidati)) continue;
+                if (altra.Distanza < t.Distanza - m_tolleranzaVicino) return;
+            }
+
+            var foto = CatturaFoto();
+            if (foto == null) return;
+
+            var proposta = new PropostaVolto
+            {
+                TracciaId = t.Id,
+                Qualita = q.Punteggio,
+                Distanza = t.Distanza,
+                Foto = foto
+            };
+            foreach (var e in t.Candidati) proposta.Embedding.Add((float[])e.Clone());
+
+            m_popup.Mostra(proposta);
+            t.Etichetta = "New?";
+            Debug.Log($"[FaceQuest] Proposta traccia {t.Id} a {t.Distanza:0.0} m (qualita {q.Punteggio:0.00}).");
+        }
+
+        private bool SomigliaAScartato(List<float[]> candidati)
+        {
+            if (m_scartati.Count == 0 || candidati.Count == 0) return false;
+            var ultimo = candidati[candidati.Count - 1];
+            foreach (var (emb, fino) in m_scartati)
+            {
+                if (Time.time >= fino) continue;
+                if (FaceEmbeddingExtractor.Somiglianza(ultimo, emb) >= m_coerenzaCandidati) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Copia il ritaglio allineato corrente in una texture a se.</summary>
+        private Texture2D CatturaFoto()
+        {
+            var precedente = RenderTexture.active;
+            try
+            {
+                RenderTexture.active = m_rtVolto;
+                m_bufferVolto.ReadPixels(new Rect(0, 0, m_rtVolto.width, m_rtVolto.height), 0, 0);
+                m_bufferVolto.Apply(false);
+                var foto = new Texture2D(m_rtVolto.width, m_rtVolto.height, TextureFormat.RGB24, false);
+                foto.SetPixels32(m_bufferVolto.GetPixels32());
+                foto.Apply(false);
+                return foto;
+            }
+            finally
+            {
+                RenderTexture.active = precedente;
+            }
+        }
+
+        /// <summary>Add premuto: si passa alla finestra del nome. La persona non esiste ancora.</summary>
+        private void AlAggiungi(PropostaVolto proposta)
+        {
+            if (m_editor == null) { ScartaProposta(proposta); return; }
+            m_editor.ApriNuova(proposta);
+        }
+
+        /// <summary>
+        /// Discard, scadenza del popup o Cancel nella finestra del nome. Il volto
+        /// non e rifiutato per sempre: per m_pausaDopoScarto secondi non lo si
+        /// ripropone, poi puo tornare.
+        /// </summary>
+        public void ScartaProposta(PropostaVolto proposta)
+        {
+            if (proposta == null) return;
+
+            var fino = Time.time + m_pausaDopoScarto;
+            foreach (var t in m_tracker.Tracce)
+            {
+                if (t.Id != proposta.TracciaId) continue;
+                t.NonProporreFinoA = fino;
+                t.ScordaCandidati();
+                if (t.PersonID == null) t.Etichetta = "Unknown";
+            }
+
+            if (proposta.Embedding.Count > 0)
+                m_scartati.Add((proposta.Embedding[proposta.Embedding.Count - 1], fino));
+
+            // Una piccola pausa globale, perche chiudere un popup non deve far
+            // spuntare subito quello dell'altra persona.
+            m_prossimaProposta = Time.time + 1.0f;
+
+            if (proposta.Foto != null) Destroy(proposta.Foto);
+            proposta.Foto = null;
+            Debug.Log($"[FaceQuest] Proposta scartata (traccia {proposta.TracciaId}).");
+        }
+
+        /// <summary>Il nome e stato scritto: il volto entra nel database, con nome, quindi persistente.</summary>
+        public void AggiungiDaProposta(PropostaVolto proposta, string nome)
+        {
+            if (proposta == null || proposta.Embedding.Count == 0) return;
+
+            var p = m_database.Crea(proposta.Embedding[0], proposta.Qualita);
+            for (var i = 1; i < proposta.Embedding.Count; i++)
+                m_database.Osserva(p, proposta.Embedding[i], proposta.Qualita, true);
+
+            p.Anteprima = proposta.Foto;
+            p.QualitaAnteprima = proposta.Qualita;
+            proposta.Foto = null;
+
+            m_database.AssegnaNome(p, nome);
+            NotificaRinomina(p);
+
+            // Il nome NON si attacca alla traccia. Fra Add e Save passano diversi
+            // secondi, il tempo di scrivere: la traccia puo essere ormai sopra un
+            // altro volto (nel video di prova, la TV e passata dalla donna a un
+            // uomo mentre si scriveva il nome, e l'uomo ha preso il nome di lei
+            // finche non e arrivata la riconferma). La traccia si azzera e il
+            // prossimo embedding dice chi c'e davvero: se e la stessa persona il
+            // database la riconosce, se e un'altra resta Unknown.
+            foreach (var t in m_tracker.Tracce)
+            {
+                if (t.Id != proposta.TracciaId) continue;
+                t.PersonID = null;
+                t.Etichetta = "...";
+                t.Esito = EsitoIdentita.DaFare;
+                t.Confidenza = 0f;
+                t.TentativiIncerti = 0;
+                t.ScordaCandidati();
+            }
+
+            Debug.Log($"[FaceQuest] Aggiunta {p.PersonID} '{p.DisplayName}' da Train.");
+        }
+
+        public void CommutaModo() => ImpostaModo(m_modo == ModoFace.Train ? ModoFace.Search : ModoFace.Train);
+
+        public void ImpostaModo(ModoFace modo)
+        {
+            if (modo == m_modo) return;
+            m_modo = modo;
+
+            // Un popup aperto appartiene alla fase che lo ha generato: passando a
+            // Search sparisce senza lasciare nulla in sospeso.
+            var aperta = m_popup != null ? m_popup.Chiudi() : null;
+            if (aperta != null && aperta.Foto != null) Destroy(aperta.Foto);
+
+            foreach (var t in m_tracker.Tracce)
+            {
+                t.ScordaCandidati();
+                t.NonProporreFinoA = 0f;
+            }
+            m_scartati.Clear();
+            m_candidatiInAttesa = 0;
+            m_prossimaProposta = Time.time + 1.0f;
+
+            m_database.NotificaCambio();
+            Debug.Log($"[FaceQuest] Fase: {(modo == ModoFace.Train ? "TRAIN" : "SEARCH")}.");
         }
 
         /// <summary>
@@ -469,6 +716,7 @@ namespace FaceQuest
             if (m_editor == null || !m_editor.Aperto)
             {
                 if (FaceComandi.RiconoscimentoPremuto()) CommutaRiconoscimento();
+                if (FaceComandi.ModalitaPremuta()) CommutaModo();
                 if (FaceComandi.CancellaDbPremuto()) m_editor?.ChiediConfermaCancellaTutto();
             }
 
@@ -512,6 +760,7 @@ namespace FaceQuest
         {
             if (Time.time < m_prossimaManutenzione) return;
             m_prossimaManutenzione = Time.time + 4f;
+            m_scartati.RemoveAll(x => Time.time >= x.Fino);
 
             var fuse = m_database.FondiSimili(m_sogliaFusione);
             var potate = m_database.PotaFantasmi(m_silenzioFantasmi, m_osservazioniFantasma);
@@ -589,12 +838,12 @@ namespace FaceQuest
         private string RigaDiagnostica()
         {
             var cam = m_camera == null
-                ? "cam assente"
+                ? "cam missing"
                 : m_camera.IsPlaying
                     ? $"cam {m_camera.CurrentResolution.x}x{m_camera.CurrentResolution.y}"
-                    : "cam in attesa (permesso?)";
+                    : "cam waiting (permission?)";
 
-            var det = m_detector == null ? "det assente"
+            var det = m_detector == null ? "det missing"
                     : m_detector.Pronto ? $"det {m_detector.LarghezzaIngresso}x{m_detector.AltezzaIngresso}"
                     : $"det KO: {m_detector.Stato}";
 
@@ -609,11 +858,11 @@ namespace FaceQuest
             var motivo = string.IsNullOrEmpty(q.Motivo) ? "ok" : q.Motivo;
 
             return $"{cam} · {det} · {emb} · {shader}\n" +
-                   $"{m_hzPipeline:0.0} Hz · volti {m_rilevamenti.Count} ({max:0.00}) · " +
-                   $"tracce {m_tracker.Tracce.Count} · emb {m_embeddingTotali} · " +
-                   $"persone {m_database.Persone.Count}\n" +
-                   $"qualita {q.Punteggio:0.00} ({motivo}) · {q.LatoPixel:0} px · " +
-                   $"yaw {q.Yaw:0}° pitch {q.Pitch:0}° · conferme {m_candidatiInAttesa}/{m_confermePerCreare}";
+                   $"{m_hzPipeline:0.0} Hz · faces {m_rilevamenti.Count} ({max:0.00}) · " +
+                   $"tracks {m_tracker.Tracce.Count} · emb {m_embeddingTotali} · " +
+                   $"people {m_database.Persone.Count}\n" +
+                   $"quality {q.Punteggio:0.00} ({motivo}) · {q.LatoPixel:0} px · " +
+                   $"yaw {q.Yaw:0}° pitch {q.Pitch:0}° · confirms {m_candidatiInAttesa}/{m_confermePerCreare}";
         }
     }
 }

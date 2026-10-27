@@ -4,11 +4,14 @@
 // riga mostra il ritaglio del volto, l'identificativo, il nome se assegnato e
 // lo stato dell'identita.
 //
-// Nel pannello NON ci sono bottoni. I comandi stanno sui tasti del controller
-// (A riconoscimento, Y cancella, B tenuto esce, stick per scorrere): puntare un
-// bottone sospeso in aria e piu lento e meno preciso che premere un tasto, e il
-// pannello sta di lato, spesso fuori dal campo visivo. Il puntatore serve solo
-// dove non c'e alternativa: scegliere una persona e scriverne il nome.
+// Di bottoni ce n'e uno solo: quello che passa da Train a Search. I comandi
+// stanno sui tasti del controller (A riconoscimento, grip Train/Search, Y
+// cancella, B tenuto esce, stick per scorrere): puntare un bottone sospeso in
+// aria e piu lento e meno preciso che premere un tasto, e il pannello sta di
+// lato, spesso fuori dal campo visivo. Il bottone della modalita c'e comunque
+// perche e il comando che si vuole poter fare anche senza ricordare quale tasto
+// sia, e perche mostra la fase in cui si e. Per il resto il puntatore serve dove
+// non c'e alternativa: scegliere una persona e scriverne il nome.
 //
 // Il layout e calcolato, non scritto a mano: l'altezza del pannello viene dalla
 // somma dei suoi pezzi. Con le coordinate a costanti fisse gli elementi
@@ -29,7 +32,7 @@ namespace FaceQuest
         [SerializeField, Tooltip("Mostra in fondo al pannello cio che le due reti ricevono davvero.")]
         private bool m_anteprimePipeline = true;
 
-        private const float Larghezza = 470f;
+        private const float Larghezza = 564f;   // +20 %: le righe dei comandi e della diagnostica ci stanno, e i loghi respirano
         private const float AltezzaRiga = 82f;
         private const float Scala = 0.00075f;
         private const float Margine = 12f;
@@ -47,6 +50,9 @@ namespace FaceQuest
         private readonly List<Persona> m_ordinate = new List<Persona>();
         private Text m_titolo;
         private Text m_statoRiconoscimento;
+        private Image m_sfondoModo;
+        private Text m_testoModo;
+        private bool m_modoSotto;
         private Text m_diagnostica;
         private RawImage m_anteprimaIngresso;
         private RawImage m_anteprimaVolto;
@@ -157,8 +163,9 @@ namespace FaceQuest
             // Le altezze sono misurate sul testo che ci va davvero dentro: righe
             // lunghe andavano a capo e sbordavano sull'elemento sotto, e nel
             // visore si leggevano due frasi sovrapposte.
-            const float hTitolo = 44f, hComandi = 80f, hNota = 32f, hDiag = 96f, hAnteprime = 104f;
-            var yRighe = 14f + hTitolo + 8f;
+            const float hTitolo = 44f, hModo = 52f, hComandi = 108f, hNota = 32f, hDiag = 96f, hAnteprime = 104f;
+            var yModo = 14f + hTitolo + 6f;
+            var yRighe = yModo + hModo + 8f;
             var yComandi = yRighe + righe * AltezzaRiga + 10f;
             var yNota = yComandi + hComandi + 6f;
             var yDiag = yNota + hNota + 4f;
@@ -176,6 +183,19 @@ namespace FaceQuest
             UIFacile.Posiziona(m_statoRiconoscimento.rectTransform,
                 new Vector2(Larghezza - 250f - Margine, -16f), new Vector2(250f, hTitolo));
 
+            // Il bottone della fase: tutta la larghezza, colore e testo cambiano con
+            // la modalita. Si vede subito dove si e e dove si andrebbe premendolo.
+            var bottoneModo = UIFacile.Bottone("Modo", radice, "", 25,
+                new Vector2(Margine, -yModo), new Vector2(Larghezza - 2f * Margine, hModo),
+                ColoreModo(ModoFace.Search), () => m_manager?.CommutaModo());
+            m_sfondoModo = bottoneModo.GetComponent<Image>();
+            m_testoModo = bottoneModo.GetComponentInChildren<Text>();
+            bottoneModo.Evidenzia = dentro =>
+            {
+                m_modoSotto = dentro;
+                ColoraBottoneModo();
+            };
+
             m_contenitore = new GameObject("Righe", typeof(RectTransform)).transform;
             m_contenitore.SetParent(radice, false);
             UIFacile.Posiziona((RectTransform)m_contenitore, new Vector2(0f, -yRighe),
@@ -188,7 +208,7 @@ namespace FaceQuest
             var colonna = (Larghezza - 3f * Margine) * 0.5f;
 
             var comandiSx = UIFacile.Testo("ComandiSx", radice,
-                "A   riconoscimento\nB   tenuto: esci\nstick ▲▼   scorri · premuto: ricentra", 19);
+                "A   recognition on/off\ngrip   Train / Search\nB   hold: quit\nstick ▲▼   scroll · press: recenter", 19);
             comandiSx.color = new Color(0.80f, 0.86f, 1f, 0.80f);
             comandiSx.lineSpacing = 1.2f;
             comandiSx.horizontalOverflow = HorizontalWrapMode.Overflow;
@@ -196,7 +216,7 @@ namespace FaceQuest
                 new Vector2(colonna, hComandi));
 
             var comandiDx = UIFacile.Testo("ComandiDx", radice,
-                "Y   cancella il database\ngrilletto   dai un nome\ngrilletto tenuto   sposta il pannello", 19);
+                "Y   delete the database\ntrigger   set a name\ntrigger held   move the panel", 19);
             comandiDx.color = new Color(0.80f, 0.86f, 1f, 0.80f);
             comandiDx.lineSpacing = 1.2f;
             comandiDx.horizontalOverflow = HorizontalWrapMode.Overflow;
@@ -204,7 +224,7 @@ namespace FaceQuest
                 new Vector2(Margine * 2f + colonna, -yComandi), new Vector2(colonna, hComandi));
 
             var nota = UIFacile.Testo("Nota", radice,
-                "Riconoscimento locale — nessun dato lascia il visore.", 19);
+                "On-device recognition — no data leaves the headset.", 19);
             nota.color = new Color(1f, 1f, 1f, 0.5f);
             UIFacile.Posiziona(nota.rectTransform, new Vector2(Margine + 4f, -yNota),
                 new Vector2(Larghezza - 2f * Margine, hNota));
@@ -213,7 +233,7 @@ namespace FaceQuest
             UIFacile.Posiziona(cornice.rectTransform, new Vector2(Margine, -yDiag),
                 new Vector2(Larghezza - 2f * Margine, hDiag));
 
-            m_diagnostica = UIFacile.Testo("Diagnostica", cornice.rectTransform, "in avvio…", 17);
+            m_diagnostica = UIFacile.Testo("Diagnostica", cornice.rectTransform, "starting…", 17);
             m_diagnostica.color = new Color(0.75f, 0.90f, 1f, 0.85f);
             UIFacile.Posiziona(m_diagnostica.rectTransform, new Vector2(8f, -4f),
                 new Vector2(Larghezza - 2f * Margine - 16f, hDiag - 8f));
@@ -225,7 +245,7 @@ namespace FaceQuest
                 new Vector2(Margine, -yAnteprime), new Vector2(128f, 96f));
             m_anteprimaIngresso.enabled = false;
 
-            var etIngresso = UIFacile.Testo("EtIngresso", radice, "ingresso\ndetector", 17);
+            var etIngresso = UIFacile.Testo("EtIngresso", radice, "detector\ninput", 17);
             etIngresso.color = new Color(1f, 1f, 1f, 0.5f);
             UIFacile.Posiziona(etIngresso.rectTransform,
                 new Vector2(Margine + 136f, -yAnteprime), new Vector2(100f, 50f));
@@ -235,7 +255,7 @@ namespace FaceQuest
                 new Vector2(Margine + 250f, -yAnteprime), new Vector2(96f, 96f));
             m_anteprimaVolto.enabled = false;
 
-            var etVolto = UIFacile.Testo("EtVolto", radice, "volto\nallineato", 17);
+            var etVolto = UIFacile.Testo("EtVolto", radice, "aligned\nface", 17);
             etVolto.color = new Color(1f, 1f, 1f, 0.5f);
             UIFacile.Posiziona(etVolto.rectTransform,
                 new Vector2(Margine + 354f, -yAnteprime), new Vector2(100f, 50f));
@@ -279,6 +299,29 @@ namespace FaceQuest
             return riga;
         }
 
+        private static Color ColoreModo(ModoFace modo) => modo == ModoFace.Train
+            ? new Color(0.58f, 0.32f, 0.07f, 0.96f)
+            : new Color(0.10f, 0.28f, 0.52f, 0.96f);
+
+        /// <summary>
+        /// Testo e colore del bottone della fase. Il testo dice dove si e e, dopo la
+        /// freccia, dove si andrebbe premendo.
+        /// </summary>
+        private void ColoraBottoneModo()
+        {
+            if (m_sfondoModo == null || m_testoModo == null || m_manager == null) return;
+
+            var modo = m_manager.Modo;
+            m_testoModo.text = modo == ModoFace.Train
+                ? "TRAIN  ›  switch to SEARCH"
+                : "SEARCH  ›  switch to TRAIN";
+
+            var c = ColoreModo(modo);
+            if (m_modoSotto)
+                c = new Color(Mathf.Min(1f, c.r + 0.20f), Mathf.Min(1f, c.g + 0.20f), Mathf.Min(1f, c.b + 0.20f), 1f);
+            m_sfondoModo.color = c;
+        }
+
         private void Scorri(int passo)
         {
             var massimo = Mathf.Max(0, m_ordinate.Count - m_righe.Count);
@@ -302,7 +345,7 @@ namespace FaceQuest
                 m_titolo.text = m_ordinate.Count == 0 ? "People" : $"People  ({m_ordinate.Count})";
             else
                 m_titolo.text = $"People  {m_primaRiga + 1}–{Mathf.Min(m_primaRiga + m_righe.Count, m_ordinate.Count)}" +
-                                $" di {m_ordinate.Count}";
+                                $" of {m_ordinate.Count}";
 
             if (m_manager != null)
             {
@@ -312,6 +355,8 @@ namespace FaceQuest
                     ? new Color(0.35f, 0.95f, 0.45f)
                     : new Color(1f, 0.55f, 0.35f);
             }
+
+            ColoraBottoneModo();
 
             for (var i = 0; i < m_righe.Count; i++)
             {
@@ -333,10 +378,10 @@ namespace FaceQuest
                 riga.Volto.texture = p.Anteprima;
                 riga.Volto.enabled = p.Anteprima != null;
 
-                var stato = p.Persistent ? "nome assegnato" : "identita temporanea";
+                var stato = p.Persistent ? "named" : "temporary";
                 var secondi = (float)(System.DateTime.UtcNow - p.UltimaVista).TotalSeconds;
-                var quando = secondi < 3f ? "ora" : secondi < 90f ? $"{secondi:0}s" : $"{secondi / 60f:0} min";
-                riga.Dettaglio.text = $"{p.PersonID} · {stato} · {p.ObservationCount} oss. · {quando}";
+                var quando = secondi < 3f ? "now" : secondi < 90f ? $"{secondi:0}s" : $"{secondi / 60f:0} min";
+                riga.Dettaglio.text = $"{p.PersonID} · {stato} · {p.ObservationCount} obs. · {quando}";
             }
         }
     }
